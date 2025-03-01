@@ -1,0 +1,51 @@
+name: Update and Convert Postman Collections
+
+on:
+  schedule:
+    - cron: '0 0 * * *'  # Runs daily at midnight UTC
+  workflow_dispatch:  # Allows manual trigger
+
+jobs:
+  update_collections:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v3
+
+      - name: Install jq (JSON processor)
+        run: sudo apt-get install -y jq
+
+      - name: Fetch latest Postman Collection
+        run: |
+          mkdir -p collections markdown
+          
+          COLLECTION_ID="0d5wa2d"  # SocialData API Collection ID
+
+          echo "Fetching SocialData API..."
+          curl -H "X-Api-Key: ${{ secrets.POSTMAN_API_KEY }}" \
+               -X GET "https://api.getpostman.com/collections/${COLLECTION_ID}" \
+               -o "collections/socialdata.json"
+
+          echo "Converting to Markdown..."
+          cat "collections/socialdata.json" | jq -r '
+            "# " + .collection.info.name + "\n\n" +
+            "## Description\n" + .collection.info.description + "\n\n" +
+            "## Endpoints\n" +
+            ([
+              .collection.item[] | 
+              "### " + .name + "\n" +
+              "- **Method:** " + .request.method + "\n" +
+              "- **URL:** `" + .request.url.raw + "`\n" +
+              "- **Headers:**\n" + 
+                ([.request.header[] | "- " + .key + ": " + .value] | join("\n")) + "\n\n"
+            ] | join("\n"))
+          ' > "markdown/socialdata.md"
+
+      - name: Commit and push if changed
+        run: |
+          git config --global user.name "github-actions"
+          git config --global user.email "github-actions@github.com"
+          git add collections/socialdata.json markdown/socialdata.md
+          git diff --quiet && git diff --staged --quiet || git commit -m "Update SocialData API Collection"
+          git push
+
